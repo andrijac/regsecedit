@@ -6,6 +6,20 @@ A self-hosted web app for posting magnet/torrent links and consuming them as an 
 
 ---
 
+## Why This Exists
+
+Most torrent clients (qBittorrent, Transmission, etc.) have a built-in RSS reader. When pointed at an RSS feed, the client either automatically starts downloading matching torrents or shows them in its RSS list — depending on your settings.
+
+**The typical use case:** you're at work, at a coffee shop, or on your phone and want to queue something to download at home. Instead of remoting into your PC, you post the magnet link to your private feed. Your home torrent client is subscribed to that feed and picks it up automatically.
+
+Key properties that make this practical:
+
+- **No registration.** Authentication is a keypair you generate in the browser — no account, no password, no email.
+- **Remote-friendly.** Post from any device with a browser. Your home client polls the feed and acts on it.
+- **Shareable.** Give someone your feed URL and they receive everything you post — useful for sharing downloads with a household or a friend.
+
+---
+
 ## How It Works
 
 1. **Generate a keypair** in the browser (your private key never leaves your device)
