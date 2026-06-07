@@ -269,6 +269,17 @@ channels table:          posts table:
                          └────┴──────────┴─────────────────┘
 ```
 
+### SQLite PRAGMAs
+
+`PRAGMA` is SQLite's configuration and metadata API — there is no standard SQL equivalent. We set two on every connection startup in `db.js`:
+
+| Pragma | Value | Effect |
+|---|---|---|
+| `journal_mode` | `WAL` | Write-Ahead Log — readers don't block writers, better concurrent performance |
+| `foreign_keys` | `ON` | Enforce `REFERENCES` constraints — SQLite ignores them by default without this |
+
+The `foreign_keys` pragma is critical: without it, SQLite silently accepts a post with a `pubkey` that doesn't exist in `channels`.
+
 ### Migrations
 
 There is no migration framework. The schema is applied on every startup via `CREATE TABLE IF NOT EXISTS` in `db.js`. This means:
