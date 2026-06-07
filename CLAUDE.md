@@ -62,6 +62,19 @@ Main() → ParameterList.parse(args)
        → key.SetAccessControl(security)
 ```
 
+## Documentation Policy
+
+**Every change must be documented.** This applies to all projects in this repo.
+
+- After any code change, update the relevant `README.md` with what changed and why
+- If a conversation reveals design decisions, constraints, or non-obvious behavior, add it to the README immediately — not later
+- New sections, env vars, API endpoints, architectural decisions, `.gitignore` entries, deployment notes — all go in the README
+- Commit the README update in the same commit as the code change, or immediately after
+
+This rule applies to `torrent-rss/README.md` and any future subprojects.
+
+---
+
 ### Known incomplete areas
 
 - Parameter validation is explicitly deferred (`TODO: validate parameters` in `Program.cs:37`)
