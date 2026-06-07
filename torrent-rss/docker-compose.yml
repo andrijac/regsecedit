@@ -1,0 +1,16 @@
+services:
+  torrent-rss:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      INVITE_CODE: ${INVITE_CODE:-}
+      DATABASE_PATH: /data/torrent-rss.db
+    volumes:
+      - torrent-rss-data:/data
+    restart: unless-stopped
+
+volumes:
+  torrent-rss-data:
+    driver: local

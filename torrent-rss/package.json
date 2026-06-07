@@ -1,0 +1,16 @@
+{
+  "name": "torrent-rss",
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "postinstall": "node scripts/vendor.js"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0",
+    "better-sqlite3": "^9.6.0",
+    "express": "^4.21.0"
+  }
+}
