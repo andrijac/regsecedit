@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: torrent-rss
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: INVITE_CODE
+        sync: false
