@@ -269,6 +269,16 @@ channels table:          posts table:
                          └────┴──────────┴─────────────────┘
 ```
 
+### Migrations
+
+There is no migration framework. The schema is applied on every startup via `CREATE TABLE IF NOT EXISTS` in `db.js`. This means:
+
+- **First run** — tables are created
+- **Subsequent runs** — `IF NOT EXISTS` skips creation, existing data is untouched
+- **Schema changes** — nothing runs automatically; the old schema stays and new code that expects new columns will break silently
+
+If a schema change is needed, run `ALTER TABLE` manually against the live database, or implement a version-based migration runner using SQLite's built-in `PRAGMA user_version` as a schema version counter.
+
 ### Concurrent access
 
 No lock issues for a single-instance deployment, for two reasons:
