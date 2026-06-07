@@ -23,7 +23,7 @@ Multiple people can use the same server, each with their own independent channel
 |---|---|
 | Runtime | Node.js 20+ (ESM) |
 | Framework | Express 4 |
-| Database | SQLite (`better-sqlite3`, WAL mode) |
+| Database | SQLite via `@libsql/client` (Turso in production, local file in dev) |
 | Crypto | `@noble/ed25519` v2 — server and browser |
 | Frontend | Vanilla HTML/CSS/JS — no build step |
 
@@ -63,7 +63,8 @@ INVITE_CODE=yourpassword docker compose up
 |---|---|---|
 | `PORT` | `3000` | HTTP port to listen on |
 | `INVITE_CODE` | _(empty)_ | If set, required to create new channels. Leave empty for open registration. |
-| `DATABASE_PATH` | `./data/torrent-rss.db` | Path to the SQLite database file |
+| `TURSO_DATABASE_URL` | _(empty)_ | Turso database URL (e.g. `libsql://your-db.turso.io`). If not set, falls back to a local file at `./data/torrent-rss.db`. |
+| `TURSO_AUTH_TOKEN` | _(empty)_ | Turso auth token. Not required for local file databases. |
 
 Copy `.env.example` to `.env` and edit as needed.
 
@@ -166,33 +167,81 @@ curl -X POST https://your-server/api/channel \
 
 ## Deploying to Hosted Platforms
 
-### Railway / Render / Fly.io
+### Database: Turso (required for hosted deployments)
 
-These platforms auto-detect `package.json`, run `npm ci` (which also vendors the browser crypto library via `postinstall`), and execute `npm start`.
+Render's free tier has no persistent disk — the filesystem resets on every redeploy. The database is therefore hosted on [Turso](https://turso.tech), a free SQLite-compatible cloud service.
 
-**Required steps:**
-1. Set `INVITE_CODE` in the platform's environment variables (optional but recommended)
-2. Mount a persistent volume and set `DATABASE_PATH` to a path on that volume (e.g. `/data/torrent-rss.db`)
+**One-time Turso setup:**
 
-**Railway:** Add a Volume → mount at `/data` → set `DATABASE_PATH=/data/torrent-rss.db`.
+```bash
+# Install Turso CLI
+curl -sSfL https://get.tur.so/install.sh | bash
 
-**Render:** Add a Disk → mount at `/data` → set `DATABASE_PATH=/data/torrent-rss.db`.
+# Log in
+turso auth login
 
-**Fly.io:**
+# Create the database
+turso db create torrent-rss
+
+# Get the connection URL
+turso db show torrent-rss --url
+# → libsql://torrent-rss-<your-name>.turso.io
+
+# Create an auth token
+turso db tokens create torrent-rss
+# → eyJ...
+```
+
+Set these as environment variables on whichever platform you deploy to:
+- `TURSO_DATABASE_URL` = the URL from above
+- `TURSO_AUTH_TOKEN` = the token from above
+
+For **local development**, Turso is optional — if `TURSO_DATABASE_URL` is not set, the app falls back to a local SQLite file at `./data/torrent-rss.db`.
+
+---
+
+### Render (free tier)
+
+A `render.yaml` blueprint is included. Steps:
+
+1. Push the repo to GitHub
+2. Go to [render.com](https://render.com) → **New** → **Blueprint**
+3. Connect the repo — Render detects `render.yaml` automatically
+4. In the **Environment** tab, set:
+   - `TURSO_DATABASE_URL` — your Turso URL
+   - `TURSO_AUTH_TOKEN` — your Turso token
+   - `INVITE_CODE` — optional, restricts channel creation
+5. Deploy
+
+> **Free tier note:** The service spins down after 15 minutes of inactivity and takes ~30 seconds to wake on the next request. Data is safe in Turso regardless.
+
+---
+
+### Railway / Fly.io
+
+Both support persistent volumes, so you can use either Turso or a local SQLite file on a mounted volume.
+
+**With Turso (recommended):** set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in environment variables — same as Render.
+
+**With local SQLite on Railway:** Add a Volume → mount at `/data` → set `TURSO_DATABASE_URL=file:/data/torrent-rss.db`.
+
+**With local SQLite on Fly.io:**
 ```bash
 fly volumes create torrent_rss_data --size 1
 # Add [mounts] to fly.toml: source = "torrent_rss_data", destination = "/data"
+# Set TURSO_DATABASE_URL=file:/data/torrent-rss.db
 ```
+
+---
 
 ### Bare VPS (with nginx)
 
 ```bash
-# Install Node.js 20+
-# Clone repo, cd into torrent-rss/
+# Install Node.js 20+, clone the repo, cd into torrent-rss/
 npm install
-PORT=3000 DATABASE_PATH=/var/lib/torrent-rss/db.sqlite node server.js
+TURSO_DATABASE_URL=file:./data/torrent-rss.db node server.js
 
-# Nginx reverse proxy (snippet):
+# Nginx reverse proxy snippet:
 # location / {
 #   proxy_pass http://127.0.0.1:3000;
 #   proxy_set_header Host $host;
@@ -200,7 +249,7 @@ PORT=3000 DATABASE_PATH=/var/lib/torrent-rss/db.sqlite node server.js
 # }
 ```
 
-> **Note:** When behind a reverse proxy, ensure `X-Forwarded-Proto` is forwarded so the RSS feed URL uses `https://` correctly. Express reads `req.protocol` from this header.
+> **Note:** When behind a reverse proxy, ensure `X-Forwarded-Proto` is forwarded so RSS feed URLs use `https://` correctly. Express reads `req.protocol` from this header.
 
 ---
 
@@ -209,7 +258,7 @@ PORT=3000 DATABASE_PATH=/var/lib/torrent-rss/db.sqlite node server.js
 ```
 torrent-rss/
 ├── server.js        # Express app — all HTTP routes
-├── db.js            # SQLite schema init + synchronous query functions
+├── db.js            # SQLite schema init + async query functions (via @libsql/client)
 ├── auth.js          # Ed25519 signature verification (server-side)
 ├── rss.js           # RSS 2.0 XML builder (hand-rolled, no library)
 ├── scripts/
@@ -292,12 +341,12 @@ If a schema change is needed, run `ALTER TABLE` manually against the live databa
 
 ### Concurrent access
 
-No lock issues for a single-instance deployment, for two reasons:
+No lock issues for the recommended setup (Turso):
 
-1. **Node.js is single-threaded + `better-sqlite3` is synchronous** — DB operations are naturally serialized within the process; two requests can never write simultaneously.
-2. **WAL mode** (`PRAGMA journal_mode = WAL`) — readers never block writers and writers never block readers, so RSS feed reads don't stall incoming posts.
+- **Turso handles concurrency server-side** — it is a remote SQLite service with proper connection management; no lock contention regardless of how many Node.js instances you run.
+- **Local file fallback** uses WAL mode (`PRAGMA journal_mode = WAL`) — readers never block writers. Node.js's async event loop means requests are interleaved, not truly parallel, so write contention is minimal on a single instance.
 
-**Horizontal scaling caveat:** SQLite is a file, not a server. Pointing multiple Node.js instances at the same file works for reads but will produce `SQLITE_BUSY` errors under write contention. If you need horizontal scaling, swap `db.js` for a Postgres client — the rest of the app is unchanged.
+**Local file + multiple instances:** Pointing multiple Node.js processes at the same SQLite file can produce `SQLITE_BUSY` errors under write contention. Use Turso if you need to scale horizontally.
 
 ### `.gitignore` entries
 

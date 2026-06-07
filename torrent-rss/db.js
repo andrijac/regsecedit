@@ -1,57 +1,84 @@
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const dbPath = process.env.DATABASE_PATH ?? './data/torrent-rss.db';
-mkdirSync(dirname(dbPath), { recursive: true });
+const url = process.env.TURSO_DATABASE_URL ?? 'file:./data/torrent-rss.db';
 
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// For local file databases, ensure the directory exists
+if (url.startsWith('file:') && !url.includes(':memory:')) {
+  mkdirSync(dirname(url.slice(5)), { recursive: true });
+}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS channels (
+const db = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+
+// Enable WAL and foreign keys for local file databases
+// (Turso manages these server-side for remote connections)
+if (url.startsWith('file:')) {
+  await db.execute('PRAGMA journal_mode = WAL');
+  await db.execute('PRAGMA foreign_keys = ON');
+}
+
+await db.batch([
+  `CREATE TABLE IF NOT EXISTS channels (
     pubkey     TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL,
     label      TEXT
-  );
-  CREATE TABLE IF NOT EXISTS posts (
+  )`,
+  `CREATE TABLE IF NOT EXISTS posts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     pubkey     TEXT    NOT NULL REFERENCES channels(pubkey),
     title      TEXT,
     content    TEXT    NOT NULL,
     created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_posts_pubkey_created ON posts(pubkey, created_at DESC);
-`);
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_pubkey_created ON posts(pubkey, created_at DESC)`,
+], 'write');
 
-export function channelExists(pubkey) {
-  return db.prepare('SELECT 1 FROM channels WHERE pubkey = ?').get(pubkey) != null;
+export async function channelExists(pubkey) {
+  const result = await db.execute({ sql: 'SELECT 1 FROM channels WHERE pubkey = ?', args: [pubkey] });
+  return result.rows.length > 0;
 }
 
-export function createChannel(pubkey, label) {
+export async function createChannel(pubkey, label) {
   const now = Date.now();
-  db.prepare('INSERT INTO channels (pubkey, created_at, label) VALUES (?, ?, ?)').run(pubkey, now, label ?? null);
+  await db.execute({ sql: 'INSERT INTO channels (pubkey, created_at, label) VALUES (?, ?, ?)', args: [pubkey, now, label ?? null] });
   return { pubkey, created_at: now, label: label ?? null };
 }
 
-export function getChannel(pubkey) {
-  const channel = db.prepare('SELECT * FROM channels WHERE pubkey = ?').get(pubkey);
-  if (!channel) return null;
-  const { n } = db.prepare('SELECT COUNT(*) as n FROM posts WHERE pubkey = ?').get(pubkey);
-  return { ...channel, post_count: n };
+export async function getChannel(pubkey) {
+  const [channelResult, countResult] = await db.batch([
+    { sql: 'SELECT * FROM channels WHERE pubkey = ?', args: [pubkey] },
+    { sql: 'SELECT COUNT(*) as n FROM posts WHERE pubkey = ?', args: [pubkey] },
+  ], 'read');
+  if (channelResult.rows.length === 0) return null;
+  const row = channelResult.rows[0];
+  return {
+    pubkey: row.pubkey,
+    created_at: Number(row.created_at),
+    label: row.label ?? null,
+    post_count: Number(countResult.rows[0].n),
+  };
 }
 
-export function createPost(pubkey, title, content) {
+export async function createPost(pubkey, title, content) {
   const now = Date.now();
-  const result = db.prepare(
-    'INSERT INTO posts (pubkey, title, content, created_at) VALUES (?, ?, ?, ?)'
-  ).run(pubkey, title ?? null, content, now);
-  return { id: result.lastInsertRowid, pubkey, title: title ?? null, content, created_at: now };
+  const result = await db.execute({
+    sql: 'INSERT INTO posts (pubkey, title, content, created_at) VALUES (?, ?, ?, ?)',
+    args: [pubkey, title ?? null, content, now],
+  });
+  return { id: Number(result.lastInsertRowid), pubkey, title: title ?? null, content, created_at: now };
 }
 
-export function getPostsByChannel(pubkey, limit = 100) {
-  return db.prepare(
-    'SELECT * FROM posts WHERE pubkey = ? ORDER BY created_at DESC LIMIT ?'
-  ).all(pubkey, limit);
+export async function getPostsByChannel(pubkey, limit = 100) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM posts WHERE pubkey = ? ORDER BY created_at DESC LIMIT ?',
+    args: [pubkey, limit],
+  });
+  return result.rows.map(row => ({
+    id: Number(row.id),
+    pubkey: row.pubkey,
+    title: row.title ?? null,
+    content: row.content,
+    created_at: Number(row.created_at),
+  }));
 }
