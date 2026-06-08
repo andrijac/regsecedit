@@ -109,6 +109,7 @@ function updateKeyDisplays() {
   $('post-pubkey-display').textContent = pubHex;
 
   const feedUrl = `${location.origin}/rss/${pubHex}`;
+  const channelUrl = `${location.origin}/channel/${pubHex}`;
   $('feed-info').innerHTML = `
     <label>RSS Feed URL
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.3rem">
@@ -116,6 +117,7 @@ function updateKeyDisplays() {
         <button class="secondary" id="btn-copy-feed" style="flex-shrink:0;font-size:0.8rem;padding:0.3rem 0.7rem">Copy</button>
       </div>
     </label>
+    <p style="font-size:0.875rem;margin:0.75rem 0 0">Browse posts: <a href="${channelUrl}" target="_blank">${channelUrl}</a></p>
     <p style="font-size:0.8rem;color:#666;margin:0.5rem 0 0">Channel public key: <span style="font-family:monospace;font-size:0.78rem">${pubHex}</span></p>
   `;
   $('btn-copy-feed')?.addEventListener('click', () => {
@@ -310,10 +312,12 @@ $('btn-lookup-go').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) return showStatus('lookup-status', `Not found: ${data.error}`, 'err');
     const feedUrl = `${location.origin}/rss/${pubkey}`;
+    const channelUrl = `${location.origin}/channel/${pubkey}`;
     $('lookup-result').innerHTML = `
       <div style="margin-top:0.75rem;padding:0.75rem;background:#f9f9f9;border-radius:6px;font-size:0.875rem">
         <strong>${data.label ?? 'Unnamed channel'}</strong><br>
         Posts: ${data.post_count} &nbsp;·&nbsp; Created: ${new Date(data.created_at).toLocaleDateString()}<br>
+        Browse: <a href="${channelUrl}" target="_blank" style="font-family:monospace;font-size:0.82rem">${channelUrl}</a><br>
         RSS: <a href="${feedUrl}" target="_blank" style="font-family:monospace;font-size:0.82rem">${feedUrl}</a>
       </div>
     `;

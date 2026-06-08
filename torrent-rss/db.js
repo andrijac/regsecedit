@@ -82,3 +82,17 @@ export async function getPostsByChannel(pubkey, limit = 100) {
     created_at: Number(row.created_at),
   }));
 }
+
+export async function getPostsByChannelPaged(pubkey, limit, offset) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM posts WHERE pubkey = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+    args: [pubkey, limit, offset],
+  });
+  return result.rows.map(row => ({
+    id: Number(row.id),
+    pubkey: row.pubkey,
+    title: row.title ?? null,
+    content: row.content,
+    created_at: Number(row.created_at),
+  }));
+}

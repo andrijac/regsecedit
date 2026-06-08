@@ -147,6 +147,23 @@ Subscribe in qBittorrent: **View → RSS Reader → Add feed** → paste the URL
 
 ---
 
+### `GET /channel/:pubkey` — Public channel page (HTML)
+
+Server-rendered HTML page showing the channel's posts, 20 per page, newest first. Works without JavaScript. Suitable for sharing — anyone with the URL can browse the channel's posts in a browser.
+
+**Query parameters:**
+- `page` (optional, default `1`) — 1-indexed page number. Out-of-range values are clamped to the last page.
+
+**Behaviour:**
+- `200` with rendered HTML when the channel exists (even if it has zero posts)
+- `400` for malformed pubkeys (not 64 lowercase hex chars)
+- `404` for valid-format pubkeys with no registered channel
+- Magnet links and `http(s)://` content are rendered as clickable `<a>` elements. Any other content (e.g. `javascript:`) is rendered as inert text to avoid XSS.
+- Pagination is rendered as `Previous` / `Next` links plus a `Page X of Y` indicator. The links carry `rel="prev"` / `rel="next"` for crawler hints.
+- The page contains a `<link rel="alternate" type="application/rss+xml">` tag so RSS-aware browsers can auto-discover the feed.
+
+---
+
 ### `GET /api/channel/:pubkey` — Channel info
 
 Returns channel metadata and post count.
@@ -275,6 +292,7 @@ torrent-rss/
 ├── db.js            # SQLite schema init + async query functions (via @libsql/client)
 ├── auth.js          # Ed25519 signature verification (server-side)
 ├── rss.js           # RSS 2.0 XML builder (hand-rolled, no library)
+├── channelPage.js   # Server-side HTML renderer for /channel/:pubkey (paged)
 ├── scripts/
 │   └── vendor.js    # Copies @noble/ed25519 to public/vendor/ (runs on npm install)
 └── public/
