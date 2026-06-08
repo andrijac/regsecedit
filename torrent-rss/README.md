@@ -375,7 +375,10 @@ No lock issues for the recommended setup (Turso):
 
 ## Security Notes
 
-- Private keys are stored in `sessionStorage` only — they disappear when the browser tab closes
+- Private keys are stored in `localStorage` **encrypted at rest** with a passphrase you choose. The encryption uses AES-GCM-256 with a key derived via PBKDF2-SHA-256 (250,000 iterations, random 16-byte salt, random 12-byte IV) — all via the browser's built-in `crypto.subtle` Web Crypto API. The passphrase is never persisted; on each page load you enter it once to unlock the key for the session.
+- An attacker with read access to `localStorage` (e.g. via XSS) only obtains the ciphertext — they still need to brute-force the passphrase. Choose a strong one; the iteration count tunes per-guess cost, not unguessability.
+- After unlocking, the decrypted private key lives in JavaScript memory for the page's lifetime so signing posts is instant. Closing the tab evicts it; refresh requires re-entering the passphrase.
+- Lose the passphrase and you lose access — the server has no recovery path. The Keys tab shows the raw private key once on generation; save it somewhere safe (password manager, paper) as a backup.
 - The server never receives private keys
 - The `INVITE_CODE` is a shared secret for channel creation, not per-user authentication
 - SQLite WAL mode enables safe concurrent reads from multiple HTTP requests
