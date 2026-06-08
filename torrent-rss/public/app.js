@@ -34,7 +34,7 @@ async function loadKeysFromHex(privHex) {
   if (!isValidHex64(h)) throw new Error('Private key must be exactly 64 lowercase hex characters');
   privBytes = hexToBytes(h);
   pubBytes = await ed.getPublicKeyAsync(privBytes);
-  sessionStorage.setItem('torrent-rss-privkey', h);
+  localStorage.setItem('torrent-rss-privkey', h);
   updateKeyDisplays();
 }
 
@@ -61,10 +61,10 @@ function updateKeyDisplays() {
   });
 }
 
-// Restore keys from session on page load
-const stored = sessionStorage.getItem('torrent-rss-privkey');
+// Restore keys from local storage on page load
+const stored = localStorage.getItem('torrent-rss-privkey');
 if (stored) {
-  loadKeysFromHex(stored).catch(() => sessionStorage.removeItem('torrent-rss-privkey'));
+  loadKeysFromHex(stored).catch(() => localStorage.removeItem('torrent-rss-privkey'));
 }
 
 // ---- Tab Switching ----
@@ -96,7 +96,7 @@ $('btn-generate').addEventListener('click', async () => {
   privBytes = ed.utils.randomPrivateKey();
   pubBytes = await ed.getPublicKeyAsync(privBytes);
   const privHex = bytesToHex(privBytes);
-  sessionStorage.setItem('torrent-rss-privkey', privHex);
+  localStorage.setItem('torrent-rss-privkey', privHex);
   $('display-pubkey').textContent = bytesToHex(pubBytes);
   $('display-privkey').textContent = privHex;
   $('keypair-display').style.display = 'block';

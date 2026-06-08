@@ -375,7 +375,7 @@ No lock issues for the recommended setup (Turso):
 
 ## Security Notes
 
-- Private keys are stored in `sessionStorage` only — they disappear when the browser tab closes
+- Private keys are stored in `localStorage` — they persist across browser restarts on the device, so reopening the page restores your channel without re-pasting the key. Clear the browser site data to remove them. `localStorage` is readable by any JavaScript on this origin, so a successful XSS would exfiltrate the key — keep the deployment free of third-party scripts.
 - The server never receives private keys
 - The `INVITE_CODE` is a shared secret for channel creation, not per-user authentication
 - SQLite WAL mode enables safe concurrent reads from multiple HTTP requests
