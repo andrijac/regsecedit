@@ -41,7 +41,7 @@
     }
     h2 { font-size: 1.1rem; margin-top: 0; }
     label { display: block; margin-bottom: 0.9rem; font-size: 0.9rem; color: #444; }
-    input[type=text], textarea {
+    input[type=text], input[type=password], textarea {
       display: block;
       width: 100%;
       margin-top: 0.3rem;
@@ -96,10 +96,27 @@
 
   <!-- KEYS TAB -->
   <div id="tab-keys" class="tab-content active">
+    <div class="card" id="unlock-card" style="display:none">
+      <h2>Unlock Stored Keys</h2>
+      <p style="font-size:0.875rem;color:#555;margin-top:0">An encrypted keypair is stored in this browser. Enter your passphrase to unlock it for this session.</p>
+      <label>Passphrase
+        <input type="password" id="input-unlock-pass" autocomplete="current-password">
+      </label>
+      <button id="btn-unlock">Unlock</button>
+      <div class="status" id="unlock-status"></div>
+    </div>
+
     <div class="card">
       <h2>Generate New Keypair</h2>
-      <p style="font-size:0.875rem;color:#555;margin-top:0">Your private key never leaves your browser. Save it somewhere safe — it's the only way to post to your channel.</p>
+      <p style="font-size:0.875rem;color:#555;margin-top:0">Your private key never leaves your browser. It is encrypted at rest with your passphrase — write the private key down too, since losing the passphrase means losing access.</p>
+      <label>Passphrase <small style="color:#888">(at least 8 characters)</small>
+        <input type="password" id="input-generate-pass" autocomplete="new-password">
+      </label>
+      <label>Confirm passphrase
+        <input type="password" id="input-generate-pass-confirm" autocomplete="new-password">
+      </label>
       <button id="btn-generate">Generate Keypair</button>
+      <div class="status" id="generate-status"></div>
       <div id="keypair-display" style="display:none;margin-top:1rem">
         <label>
           Public Key <small style="color:#888">(share this — it's your channel ID and RSS feed URL)</small>
@@ -128,11 +145,25 @@
 
     <div class="card">
       <h2>Load Existing Keys</h2>
+      <p style="font-size:0.875rem;color:#555;margin-top:0">Paste your private key and choose a passphrase. The key is stored in this browser encrypted with the passphrase.</p>
       <label>Private Key <small style="color:#888">(64 hex characters)</small>
         <input type="text" id="input-privkey-load" placeholder="paste your private key here" autocomplete="off">
       </label>
+      <label>Passphrase <small style="color:#888">(at least 8 characters)</small>
+        <input type="password" id="input-load-pass" autocomplete="new-password">
+      </label>
+      <label>Confirm passphrase
+        <input type="password" id="input-load-pass-confirm" autocomplete="new-password">
+      </label>
       <button id="btn-load">Load Keys</button>
       <div class="status" id="load-status"></div>
+    </div>
+
+    <div class="card" id="clear-storage-card" style="display:none">
+      <h2>Stored Keys</h2>
+      <p style="font-size:0.875rem;color:#555;margin-top:0">Remove the encrypted keypair from this browser. You will need your private key and passphrase to restore access.</p>
+      <button class="secondary" id="btn-clear-storage">Clear Stored Keys</button>
+      <div class="status" id="clear-status"></div>
     </div>
   </div>
 

@@ -24,18 +24,83 @@ function showStatus(id, msg, type) {
 
 function $(id) { return document.getElementById(id); }
 
+// ---- Passphrase-encrypted key storage (Web Crypto: PBKDF2 + AES-GCM) ----
+
+const STORAGE_KEY = 'torrent-rss-privkey';
+const PBKDF2_ITERS = 250_000;
+const MIN_PASSPHRASE_LEN = 8;
+
+async function deriveAesKey(passphrase, salt) {
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(passphrase),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptPrivBytes(plainBytes, passphrase) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveAesKey(passphrase, salt);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plainBytes);
+  return JSON.stringify({
+    v: 1,
+    salt: bytesToHex(salt),
+    iv: bytesToHex(iv),
+    ct: bytesToHex(new Uint8Array(ct))
+  });
+}
+
+async function decryptPrivBytes(blobJson, passphrase) {
+  const blob = JSON.parse(blobJson);
+  if (blob.v !== 1) throw new Error('Unknown stored-key format');
+  const key = await deriveAesKey(passphrase, hexToBytes(blob.salt));
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: hexToBytes(blob.iv) },
+    key,
+    hexToBytes(blob.ct)
+  );
+  return new Uint8Array(plain);
+}
+
+function readStoredBlob() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.v === 1 && parsed.salt && parsed.iv && parsed.ct) return raw;
+  } catch { /* not JSON — legacy or junk */ }
+  return null;
+}
+
 // ---- Key State ----
 
 let privBytes = null;
 let pubBytes = null;
 
-async function loadKeysFromHex(privHex) {
-  const h = privHex.trim().toLowerCase();
-  if (!isValidHex64(h)) throw new Error('Private key must be exactly 64 lowercase hex characters');
-  privBytes = hexToBytes(h);
+async function setKeys(newPrivBytes) {
+  privBytes = newPrivBytes;
   pubBytes = await ed.getPublicKeyAsync(privBytes);
-  localStorage.setItem('torrent-rss-privkey', h);
   updateKeyDisplays();
+  updateLockState();
+}
+
+function clearKeysInMemory() {
+  privBytes = null;
+  pubBytes = null;
+  $('keypair-display').style.display = 'none';
+  $('post-pubkey-display').textContent = 'no keys loaded';
+  $('feed-info').innerHTML = '<p style="color:#999;font-size:0.875rem">Load or generate keys (Keys tab) to see your feed URL.</p>';
+  updateLockState();
 }
 
 function updateKeyDisplays() {
@@ -61,11 +126,14 @@ function updateKeyDisplays() {
   });
 }
 
-// Restore keys from local storage on page load
-const stored = localStorage.getItem('torrent-rss-privkey');
-if (stored) {
-  loadKeysFromHex(stored).catch(() => localStorage.removeItem('torrent-rss-privkey'));
+function updateLockState() {
+  const hasStored = !!readStoredBlob();
+  const locked = !privBytes;
+  $('unlock-card').style.display = (hasStored && locked) ? 'block' : 'none';
+  $('clear-storage-card').style.display = hasStored ? 'block' : 'none';
 }
+
+updateLockState();
 
 // ---- Tab Switching ----
 
@@ -90,17 +158,49 @@ document.querySelectorAll('.copy-btn[data-copy]').forEach(btn => {
   });
 });
 
+// ---- Keys Tab: Unlock ----
+
+$('btn-unlock').addEventListener('click', async () => {
+  const passphrase = $('input-unlock-pass').value;
+  const blob = readStoredBlob();
+  if (!blob) return showStatus('unlock-status', 'No stored keys to unlock.', 'err');
+  if (!passphrase) return showStatus('unlock-status', 'Enter your passphrase.', 'err');
+  try {
+    const priv = await decryptPrivBytes(blob, passphrase);
+    await setKeys(priv);
+    $('input-unlock-pass').value = '';
+    showStatus('unlock-status', `Unlocked. Public key: ${bytesToHex(pubBytes)}`, 'ok');
+  } catch {
+    showStatus('unlock-status', 'Wrong passphrase or corrupted data.', 'err');
+  }
+});
+
 // ---- Keys Tab: Generate ----
 
 $('btn-generate').addEventListener('click', async () => {
-  privBytes = ed.utils.randomPrivateKey();
-  pubBytes = await ed.getPublicKeyAsync(privBytes);
-  const privHex = bytesToHex(privBytes);
-  localStorage.setItem('torrent-rss-privkey', privHex);
+  const pass = $('input-generate-pass').value;
+  const confirmPass = $('input-generate-pass-confirm').value;
+  if (pass.length < MIN_PASSPHRASE_LEN) {
+    return showStatus('generate-status', `Passphrase must be at least ${MIN_PASSPHRASE_LEN} characters.`, 'err');
+  }
+  if (pass !== confirmPass) {
+    return showStatus('generate-status', 'Passphrases do not match.', 'err');
+  }
+
+  const newPriv = ed.utils.randomPrivateKey();
+  try {
+    const blob = await encryptPrivBytes(newPriv, pass);
+    localStorage.setItem(STORAGE_KEY, blob);
+  } catch (e) {
+    return showStatus('generate-status', `Could not encrypt key: ${e.message}`, 'err');
+  }
+  await setKeys(newPriv);
   $('display-pubkey').textContent = bytesToHex(pubBytes);
-  $('display-privkey').textContent = privHex;
+  $('display-privkey').textContent = bytesToHex(privBytes);
   $('keypair-display').style.display = 'block';
-  updateKeyDisplays();
+  $('input-generate-pass').value = '';
+  $('input-generate-pass-confirm').value = '';
+  showStatus('generate-status', 'Keypair generated and encrypted in browser storage.', 'ok');
 });
 
 // ---- Keys Tab: Register ----
@@ -128,12 +228,40 @@ $('btn-register').addEventListener('click', async () => {
 // ---- Keys Tab: Load ----
 
 $('btn-load').addEventListener('click', async () => {
-  try {
-    await loadKeysFromHex($('input-privkey-load').value);
-    showStatus('load-status', `Keys loaded. Public key: ${bytesToHex(pubBytes)}`, 'ok');
-  } catch (err) {
-    showStatus('load-status', err.message, 'err');
+  const privHex = $('input-privkey-load').value.trim().toLowerCase();
+  const pass = $('input-load-pass').value;
+  const confirmPass = $('input-load-pass-confirm').value;
+  if (!isValidHex64(privHex)) {
+    return showStatus('load-status', 'Private key must be exactly 64 lowercase hex characters.', 'err');
   }
+  if (pass.length < MIN_PASSPHRASE_LEN) {
+    return showStatus('load-status', `Passphrase must be at least ${MIN_PASSPHRASE_LEN} characters.`, 'err');
+  }
+  if (pass !== confirmPass) {
+    return showStatus('load-status', 'Passphrases do not match.', 'err');
+  }
+
+  const newPriv = hexToBytes(privHex);
+  try {
+    const blob = await encryptPrivBytes(newPriv, pass);
+    localStorage.setItem(STORAGE_KEY, blob);
+  } catch (e) {
+    return showStatus('load-status', `Could not encrypt key: ${e.message}`, 'err');
+  }
+  await setKeys(newPriv);
+  $('input-privkey-load').value = '';
+  $('input-load-pass').value = '';
+  $('input-load-pass-confirm').value = '';
+  showStatus('load-status', `Keys loaded and encrypted in browser storage. Public key: ${bytesToHex(pubBytes)}`, 'ok');
+});
+
+// ---- Keys Tab: Clear Stored Keys ----
+
+$('btn-clear-storage').addEventListener('click', () => {
+  if (!confirm('Remove the encrypted keys from this browser? You will need your private key and passphrase to restore access.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  clearKeysInMemory();
+  showStatus('clear-status', 'Stored keys removed from this browser.', 'ok');
 });
 
 // ---- Post Tab ----
